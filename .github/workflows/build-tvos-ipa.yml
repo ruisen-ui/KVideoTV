@@ -1,0 +1,73 @@
+name: Build tvOS IPA (unsigned)
+
+# 云端编译出未签名的 KVideoTV.ipa，供本地用 Sideloadly 签名安装到 Apple TV。
+# 这样本机不需要安装 Xcode。
+#
+# 触发：仓库 Actions 页面点 "Run workflow"，或推到 main 分支。
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - "KVideoTV/**"
+      - ".github/workflows/build-tvos-ipa.yml"
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 查看 Xcode 与 SDK
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i tvos || true
+
+      - name: 编译 tvOS（不签名）
+        run: |
+          set -euo pipefail
+          PROJECT=$(find . -maxdepth 4 -name "KVideoTV.xcodeproj" -type d | head -1)
+          if [ -z "$PROJECT" ]; then
+            echo "::error::找不到 KVideoTV.xcodeproj"
+            exit 1
+          fi
+          echo "工程: $PROJECT"
+          xcodebuild \
+            -project "$PROJECT" \
+            -target KVideoTV \
+            -configuration Release \
+            -sdk appletvos \
+            CONFIGURATION_BUILD_DIR="$PWD/out" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: 打包成 .ipa
+        run: |
+          set -euo pipefail
+          APP="$PWD/out/KVideoTV.app"
+          if [ ! -d "$APP" ]; then
+            echo "::error::没找到 $APP"
+            find . -name "*.app" -type d | head -20
+            exit 1
+          fi
+          echo "产物内容："
+          ls -la "$APP"
+          rm -rf Payload KVideoTV-unsigned.ipa
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qry KVideoTV-unsigned.ipa Payload
+          ls -lh KVideoTV-unsigned.ipa
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: KVideoTV-unsigned-ipa
+          path: KVideoTV-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
