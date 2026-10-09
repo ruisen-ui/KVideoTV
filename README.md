@@ -1,83 +1,99 @@
 # KVideoTV — KVideo 的 Apple TV (tvOS) 客户端
 
-一个轻量的 tvOS WebView 壳，加载你的 KVideo 实例。视频播放交给系统播放器，
-遥控器可以直接播放 / 暂停 / 拖进度条。
+在 Apple TV 上看 KVideo 的**原生客户端**：SwiftUI 界面 + 系统播放器，遥控器直接操作。
+
+---
+
+## ⚠️ 先讲清楚：tvOS 上没有 WebView
+
+「套个网页壳」这个思路在 Apple TV 上走不通，而且不是配置问题，是平台硬限制。
+
+Apple 官方对 `WKWebView` 的可用性声明原文是：
+
+```
+iOS 8.0+  iPadOS 8.0+  Mac Catalyst 13.1+  macOS 10.10+  visionOS 1.0+
+```
+
+**唯独没有 tvOS。** tvOS 平台不提供 `WebKit.framework`，
+所以 `import WebKit` 会直接编译失败：
+
+```
+ContentView.swift:11:8: error: no such module 'WebKit'
+```
+
+（顺带一提，这也是 App Store 上没有真正的 Apple TV 浏览器的原因。）
+
+因此本项目**不是网页壳**，而是直接对接 KVideo 所使用的那套
+**苹果CMS(MacCMS) 采集源**，用原生 SwiftUI 做界面、`AVPlayer` 播 HLS。
+功能上等价于 KVideo，而且因为绕开了网页层，遥控器操作体验更好。
+
+---
+
+## 工作原理
+
+```
+① 搜索 / 列表
+     <采集站>/api.php/provide/vod?ac=videolist&wd=关键词     → JSON
+                                                                  │
+② 取分集                                                          ▼
+     vod_play_url = "第01集$https://.../share/xxx#第02集$..."   （# 分集，$$$ 分播放组）
+                                                                  │
+③ 解析播放地址                                                    ▼
+     · 已是 .m3u8 直链 → 直接用
+     · 是 /share/xxx 播放页 → 抓页面，正则提取 JS 里的 m3u8 地址
+       页内形如：const url = "/20250420/49523_116b8961/index.m3u8?sign=..."
+       （相对路径，需用页面 URL 补全）
+                                                                  │
+④ 播放                                                            ▼
+     AVPlayerViewController 播放 m3u8
+```
+
+四个步骤都在 `KVideoTV/ContentView.swift` 里，按 `// MARK:` 分段，很好找。
+
+---
+
+## 采集源配置
+
+改 `ContentView.swift` 顶部的 `VideoSource.builtIn` 即可增删源。默认 4 个：
+
+| 源 | 接口 | 实测 |
+| --- | --- | --- |
+| 非凡资源 | `http://ffzy5.tv/api.php/provide/vod` | ✅ 分享页模式 |
+| 最大资源 | `https://api.zuidapi.com/api.php/provide/vod` | ✅ 直链模式 |
+| 暴风资源 | `https://bfzyapi.com/api.php/provide/vod` | ✅ |
+| 极速资源 | `https://jszyapi.com/api.php/provide/vod` | ✅（content-type 标成 html，但内容是 JSON） |
+
+另有 `VideoSource.spare` 存了 3 个当前实测不可用的源（天涯连不上、卧龙返回反爬 HTML、
+百度云连不上）。**换到别的网络环境（比如电视所在的家庭网络）时可以再试**，
+把可用的挪进 `builtIn` 即可。
+
+> 想跟 KVideo 站点保持同步的话，源清单在它自己的 `/api/config` 里：
+> `subscriptionSources` 指向一个包含 `baseUrl` 列表的 JSON。
+
+---
 
 ## 环境要求
 
-- macOS（路线 A 还需要完整版 Xcode 15+；路线 B 不需要）
+- macOS（路线 A 需要完整版 Xcode 15+；路线 B 不需要）
 - Apple Developer 账号（免费 Apple ID 即可侧载到自己的 Apple TV，签名 7 天有效）
 - Apple TV 与 Mac 在同一局域网（无线部署），或用 tvOS Simulator
 
-## 使用
+## 三条路线怎么选
 
-1. 双击打开 `KVideoTV.xcodeproj`（工程已配好，无需再手动建项目）
-2. Xcode 左侧选中项目 → Signing & Capabilities：
-   - Team 选你的 Apple ID（Personal Team 即可）
-   - Bundle Identifier 改成唯一的，例如 `com.你的名字.KVideoTV`（默认 `com.example.KVideoTV` 会在真机上签名失败）
-3. 顶部设备选择想跑的地方：tvOS Simulator，或下面「真机」章节配对好的 Apple TV
-4. `Cmd + R` 运行
+| 路线 | 本机要装 Xcode | 适用 |
+| --- | --- | --- |
+| A. Xcode 直接跑 / `install-to-appletv.sh` | 要（约 25GB） | 磁盘够，最省事最稳 |
+| B. GitHub Actions 云编译 + Sideloadly | **不要** | 磁盘不够，或不想装 Xcode |
+| C. AirPlay 投屏 | 不要 | 只想马上看，不介意没有 App 图标 |
 
-## 装到真机 Apple TV（无线部署）
+---
 
-Apple TV 4K 没有数据口，没有 USB 调试这回事，只能走网络配对。
-另外 **tvOS 上不存在「开发者模式」开关**（那是 iOS 才有的），配对完成即可安装。
+## 路线 A：Xcode / 命令行脚本
 
-**0. 前置条件**
+**用 Xcode**：双击 `KVideoTV.xcodeproj` → Signing & Capabilities 里选 Team、
+把 Bundle ID 从 `com.example.KVideoTV` 改成唯一的 → 顶部选好设备 → `Cmd + R`。
 
-- Apple TV 第 4 代（HD）或更新，tvOS 16 及以上
-- Mac 与 Apple TV 连同一个路由器（别用访客网络，会隔离设备）
-- Mac 上装完整版 Xcode（App Store 搜索 Xcode），免费 Apple ID 足够
-
-**1. Xcode 登录 Apple ID**
-
-Xcode → Settings（`Cmd + ,`）→ Accounts → 左下 `+` → Apple ID → 登录。
-列表里出现 **Personal Team** 就行，不需要 99 美元的开发者账号。
-
-**2. 配置签名**
-
-打开工程 → 左侧选中 `KVideoTV` 项目 → TARGETS: KVideoTV → Signing & Capabilities：
-
-- 勾选 Automatically manage signing
-- Team 选你的 Personal Team
-- Bundle Identifier 换个唯一的，例如 `cc.cd.oott.KVideoTV`（用自己域名的反写最省事）
-
-**3. 在电视上打开配对开关**
-
-Apple TV：设置 → 遥控器与设备 → 远程 App 与设备 → 打开
-
-**4. 无线配对**
-
-Mac：Xcode → Window → Devices and Simulators → Devices 标签页。
-电视上那个界面等一会儿会列出你的 Mac，选中它 → 电视屏幕出现 4 位配对码 → 填进 Xcode。
-配对成功后 Apple TV 会出现在左侧设备列表，第一次可能显示
-「Preparing device for development」，等几分钟。可以在设备上右键勾选
-`Connect via network`，之后不用重配。
-
-**5. 运行**
-
-Xcode 顶部设备选择你的 Apple TV → `Cmd + R`。
-装好后在电视上首次打开会提示「不受信任的开发者」，去：
-
-设置 → 通用 → 设备管理（部分版本叫「管理设备」）→ 选中你的 Apple ID → 信任
-
-然后再打开 App 即可。
-
-**排错**
-
-| 现象 | 处理 |
-| --- | --- |
-| 电视在 Xcode 里不出现 | 先关掉 Mac 上的代理 / VPN（v2rayN、Clash Verge 的 TUN 或系统代理会吃掉 Bonjour/mDNS 发现）；确认同一 Wi-Fi；重启 Xcode 与 Apple TV |
-| 报 Apple TV is not available | tvOS 版本低于工程部署目标 16.0，升级电视或把 `TVOS_DEPLOYMENT_TARGET` 调低 |
-| 提示 Failed to register bundle identifier | Bundle ID 被占用，换一个 |
-| 过几天 App 打不开了 | 免费账号签的包有效期 7 天，回 Xcode 再 `Cmd + R` 一次即可续上 |
-| 只能装几个 App | 免费账号最多同时 3 个自签 App |
-
-**不想折腾真机**：Xcode 顶部直接选 Apple TV 4K Simulator，`Cmd + R` 就能看效果，不需要配对也不需要签名。
-
-## 路线 A：命令行一键构建 + 安装
-
-不想每次都开 Xcode 点 Run 的话，用工程根目录的脚本：
+**用脚本**：
 
 ```bash
 cd KVideoTV
@@ -88,20 +104,21 @@ TEAM_ID=XXXXXXXXXX ./install-to-appletv.sh
 
 它会依次做：检查是否装了完整 Xcode → 检查 Bundle ID 是否还是 `com.example.*` →
 从钥匙串找签名证书并取出 Team ID → 列出已配对的 Apple TV → 编译 Release →
-通过局域网安装到电视。
+通过局域网安装到电视。**7 天到期后重新跑这一条即可续签**，不用开 Xcode。
 
-**7 天到期后重新跑这一条命令即可续签**，不需要打开 Xcode。
+### 装到真机前的准备
 
-首次运行前必须完成：Xcode 已登录 Apple ID、Bundle ID 已改、电视已与 Xcode 配对。
-缺哪一步脚本会直接告诉你。
+1. **Xcode 登录 Apple ID**：`Cmd + ,` → Accounts → 左下 `+` → Apple ID。
+   出现 **Personal Team** 就够了，不用买 99 美元的账号。
+2. **电视打开配对开关**：设置 → 遥控器与设备 → **远程 App 与设备** → 打开。
+   （注意：**tvOS 上没有「开发者模式」开关**，那是 iOS 的东西，别在电视里找。）
+3. **无线配对**：Mac 上 Xcode → Window → Devices and Simulators → Devices，
+   等电视出现在列表里，选中 → 电视上会显示 4 位码 → 填进 Xcode。
+   配对后可右键勾 `Connect via network`，以后不用重配。
+4. **首次打开被拦**：电视上提示「不受信任的开发者」→
+   设置 → 通用 → 设备管理 → 选中你的 Apple ID → 信任。
 
-## 三条路线怎么选
-
-| 路线 | 本机要装 Xcode | 适用 |
-| --- | --- | --- |
-| A. Xcode 直接跑 / `install-to-appletv.sh` | 要（约 25GB） | 磁盘够，最省事最稳 |
-| B. GitHub Actions 云编译 + Sideloadly | **不要** | 磁盘不够，或不想装 Xcode |
-| C. AirPlay 投屏 | 不要 | 只想马上看，不介意没有 App 图标 |
+---
 
 ## 路线 B：云编译 + Sideloadly（本机不装 Xcode）
 
@@ -114,74 +131,108 @@ Sideloadly 这类工具省掉的是「装 Xcode」，**不是「签名」**—�
 它照样要用你的 Apple ID 去申请证书，免费账号同样 7 天过期。
 用别人共享的证书去签属于违反 Apple 开发者协议，这条路不走。
 
-另外 tvOS 上能用的侧载工具其实很少：
+tvOS 上能用的侧载工具其实很少：
 
 | 工具 | Apple TV | 说明 |
 | --- | --- | --- |
-| Sideloadly | ✅ | 无数据口的 Apple TV 4K 只能在 **macOS** 上无线侧载（Windows 侧载必须有 USB 口） |
+| Sideloadly | ✅ | 无数据口的 Apple TV 4K 只能在 **macOS** 上无线侧载（Windows 需 USB 口） |
 | AltStore | ❌ | 只支持 iOS / iPadOS |
-| TrollStore | ❌ | 依赖 CoreTrust 漏洞，只覆盖很老的 tvOS 版本，现在对不上 |
-| Apple Configurator | ⚠️ | 能无线装 ipa，但要求 ipa **已经签好名**，绕不开证书 |
+| TrollStore | ❌ | 依赖 CoreTrust 漏洞，只覆盖很老的 tvOS |
+| Apple Configurator | ⚠️ | 能无线装 ipa，但要求 ipa 已经签好名，绕不开证书 |
 
-### 步骤
+### 当前进度（本机已完成的）
+
+- ✅ git 身份已配（`ruisen-ui` / `ruisen-ui@users.noreply.github.com`）
+- ✅ 首次提交已做，分支 `main`，remote 已指向 `git@github.com:ruisen-ui/KVideoTV.git`
+- ✅ SSH 密钥已生成（`~/.ssh/id_ed25519`）
+- ⬜ **公钥还没加到 GitHub** ← 卡在这一步
+- ⬜ GitHub 上还没建仓库
+
+### 接下来要做
+
+**1. 清掉残留的 git 配置锁**（家目录里躺着一个写了一半的残骸）：
+
+```bash
+rm -f ~/.gitconfig.lock
+```
+
+**2. 把公钥加到 GitHub**：
+
+```bash
+pbcopy < ~/.ssh/id_ed25519.pub      # 公钥进剪贴板
+```
+
+打开 https://github.com/settings/keys → New SSH key → Title 随便填（如 `MacBookAir`）
+→ Key 框粘贴 → Add SSH key。
+
+验证：`ssh -T git@github.com`，看到 `Hi ruisen-ui! You've successfully authenticated`
+就对了。
+
+**3. 建仓库**：https://github.com/new → 名字填 `KVideoTV` → Private / Public 都行 →
+**不要勾** Add a README / .gitignore / license（勾了会和本地提交冲突，push 被拒）。
+
+**4. 推送**：
 
 ```bash
 cd /Users/xyyq/WorkBuddy/2026-10-09-22-00-35/KVideoTV
-git init && git add . && git commit -m "KVideoTV: tvOS WebView wrapper"
-gh repo create KVideoTV --private --source=. --push
-```
-
-没有 `gh` 就在 GitHub 网页上建个仓库，然后：
-
-```bash
-git remote add origin git@github.com:<你的用户名>/KVideoTV.git
 git push -u origin main
 ```
 
-（把 `KVideoTV` 这个目录本身当仓库根推上去，`.github/workflows/` 和 `.gitignore` 都已经放在里面了。）
+> ⚠️ 命令里的用户名**直接写字面量**，不要带 `<` `>` 尖括号。
+> zsh 会把 `<` 当成输入重定向，报成 `no such file or directory`，命令根本不会执行。
 
-1. 仓库 Actions 页面 → 左侧 `Build tvOS IPA (unsigned)` → Run workflow
-2. 跑完（约 2-3 分钟）在该次运行的 Artifacts 里下载 `KVideoTV-unsigned-ipa`
-3. 本机装 [Sideloadly](https://sideloadly.io)（几十 MB，**不需要 Xcode**）
-4. 打开 Sideloadly → 把 ipa 拖进去 → Apple ID 填自己的 → 设备选你的 Apple TV → Start
-5. 电视上首次打开提示「不受信任的开发者」→ 设置 → 通用 → 设备管理 → 信任
-6. 回 Sideloadly 打开 **Auto refresh**，Mac 在同一网络时会自动帮你续签，不用手动重装
+**5. 云端编译**：仓库 Actions 页面 → 左侧 `Build tvOS IPA (unsigned)` → Run workflow。
+约 2-3 分钟跑完，在该次运行的 Artifacts 里下载 `KVideoTV-unsigned-ipa`。
+
+**6. 侧载到电视**：
+
+1. 本机装 [Sideloadly](https://sideloadly.io)（几十 MB，**不需要 Xcode**）
+2. 打开 Sideloadly → ipa 拖进去 → Apple ID 填自己的 → 设备选你的 Apple TV → Start
+3. 电视上首次打开提示「不受信任的开发者」→ 设置 → 通用 → 设备管理 → 信任
+4. 回 Sideloadly 打开 **Auto refresh**，Mac 在同一网络时会自动续签
 
 **搜不到电视时**：先在电视上打开 设置 → 遥控器与设备 → 远程 App 与设备；
 再把 Mac 上的代理（v2rayN / Clash Verge）关掉——它会吃掉 Bonjour/mDNS 发现。
 
 **额度**：public 仓库的 Actions 免费不限量；private 仓库 macOS runner 消耗 10 倍倍率，
-每月 2000 分钟免费额度 = 大约 200 分钟 macOS，编译这个小 app 每次两三分钟，够用。
+每月 2000 分钟免费额度 ≈ 200 分钟 macOS，编译这个小 app 每次两三分钟，够用。
 
-
-
-改 KVideo 地址：`KVideoTV/ContentView.swift` 顶部
-
-```swift
-private let kvideoURL = "https://video.oott.cc.cd/"
-```
-
-## 已内置的行为
-
-- 自动播放已放开（`mediaTypesRequiringUserActionForPlayback = []`），tvOS 15.4+ 默认会拦截 autoplay
-- ATS 已放开（`NSAllowsArbitraryLoads`），http 媒体源 / CDN 证书链不标准也能播；全 https 可自行删掉
-- Cookie / localStorage 默认持久化，登录一次后重启应用仍保持登录
-- 加载失败会显示错误浮层 + 「重新加载」按钮（遥控器可聚焦）
-- 顶部 URL 显示在错误浮层里，方便排查
+---
 
 ## 常见问题
 
 | 现象 | 原因 / 处理 |
 | --- | --- |
+| 编译报 `no such module 'WebKit'` | tvOS 没有 WebKit，属于平台限制；本工程已改为原生实现，不应再出现 |
+| 搜索转很久才出结果 | 某个采集源慢或挂掉。把 `VideoSource.builtIn` 里不通的源注释掉；单请求超时已压到 8 秒 |
+| 搜索没结果 | 换个片名或换成更通用的关键词；也可以先把源切到「非凡资源」单独试 |
+| 详情页提示「这个源没有可直接播放的地址」 | 该源的 `vod_play_url` 为空，返回上一级换另一个来源的同一部片 |
+| 点开播不了、报错里有地址 | 播放页结构变了或源需要防盗链 Referer。错误浮层会把原始地址显示出来，方便对照 |
 | 真机运行提示签名错误 | Bundle ID 没改，或 Team 没选 |
-| TV 上首次启动提示「不受信任的开发者」 | TV 设置 → 通用 → VPN 与设备管理 → 信任你的开发者证书 |
-| 视频黑屏、只有声音或直接失败 | 播放器走 MSE（fMP4 分片）时需要 **tvOS 17.1+** 的 ManagedMediaSource；部署目标建议提到 17.4（改 `TVOS_DEPLOYMENT_TARGET`） |
-| 页面布局不对（要求桌面版） | 打开 `ContentView.swift` 里 `customUserAgent` 那段注释，伪装成桌面 Safari |
-| 想强制刷新页面 | 退出 App 重新进；或临时把 URL 加个 `?t=` 参数 |
+| 电视在 Xcode 里不出现 | 关掉 Mac 上的代理 / VPN（会吃掉 Bonjour 发现）；确认同一 Wi-Fi |
+| 过几天 App 打不开了 | 免费账号签的包 7 天过期，重跑一次安装即可续上 |
+| 只能装几个 App | 免费账号最多同时 3 个自签 App |
+| push 报 `Author identity unknown` | 没配 git 身份 |
+| push 报 `src refspec main does not match any` | 还没有任何 commit（通常是身份报错导致 commit 没成） |
+| push 报 `Permission denied (publickey)` | 公钥没加到 GitHub：`pbcopy < ~/.ssh/id_ed25519.pub` 后去 github.com/settings/keys 粘贴 |
+| 报 `could not lock config file: File exists` | 家目录残留 `~/.gitconfig.lock`，删掉：`rm -f ~/.gitconfig.lock` |
+
+---
+
+## 已知的坑 / 注意事项
+
+- **海报和部分源是 http**：工程的 `Info.plist` 里已放开 ATS（`NSAllowsArbitraryLoads`），
+  否则 iOS/tvOS 会直接拦掉明文 http 请求。全站 https 后可以删掉这段。
+- **`HEAD` 请求会 502**：部分采集站的 m3u8 服务器不支持 HEAD，但 `GET` 正常。
+  AVPlayer 发的是带 Range 的 GET，所以不受影响。
+- **tag 里的 m3u8 是相对路径**：形如 `2000k/hls/mixed.m3u8`，
+  AVPlayer 会相对 master playlist 自动补全，不用管。
+- **部署目标**：工程设的是 tvOS 16.0。如果以后要上更花哨的界面特效，可以提到 17.0。
 
 ## 可选增强（按需加）
 
-- **Cookie 登录**：如果 TV 上没法输密码，可在别的设备登录后把 cookie 注入
-  （`WKUserScript` + `HTTPCookie`，在 `webView.load` 之前设置 `configuration.userContentController`）
-- **自动重试**：在 `didFailProvisionalNavigation` 里延时 3 秒自动 `load()`
-- **Top Shelf**：需要 `brandassets`（App Icon & Top Shelf Image），目前用的是扁平图标，不影响安装运行
+- **多播放组**：`vod_play_url` 里 `$$$` 分隔的是不同播放线路，目前只取第一组，
+  可以做成线路切换。
+- **收藏 / 观看记录**：存 `UserDefaults` 即可，纯本地。
+- **Top Shelf**：需要 `brandassets`（App Icon & Top Shelf Image），
+  目前用的是扁平图标，不影响安装运行。
