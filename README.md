@@ -143,9 +143,14 @@ tvOS 上能用的侧载工具其实很少：
 ### 进度：已打通 ✅
 
 - ✅ 代码已推送 → https://github.com/ruisen-ui/KVideoTV （public 仓库）
-- ✅ 云端编译通过 → [Actions run 38008585972](https://github.com/ruisen-ui/KVideoTV/actions/runs/38008585972)
-- ✅ 未签名 ipa 已生成 → Artifacts 名 `KVideoTV-unsigned-ipa`，约 0.12 MB，保留 30 天
+- ✅ 云端编译通过，未签名 ipa 已生成 → Artifacts 名 `KVideoTV-unsigned-ipa`，约 0.12 MB，保留 30 天
+- ✅ **App Icon 已修好**（之前装上去是白图标）：pbxproj 里
+  `ASSETCATALOG_COMPILER_APPICON_NAME` 原本是 `AppIcon`，与 tvOS 的图标栈名
+  `App Icon & Top Shelf Image` 对不上，actool 静默跳过。已改对，并加了 `assetutil`
+  校验：构建后确认 `Assets.car` 里真的有 `App Icon - Small/Front/Content` 才收工。
 - ⬜ 待你做：下载 ipa → Sideloadly 用自己 Apple ID 签名 → 装到 Apple TV
+
+> 装新包前先在电视上**删掉旧版 App**（tvOS 会缓存图标，直接覆盖装可能仍显示旧的白图标）。
 
 ### 下载 ipa
 
@@ -187,6 +192,7 @@ tvOS 上能用的侧载工具其实很少：
 | 电视在 Xcode 里不出现 | 关掉 Mac 上的代理 / VPN（会吃掉 Bonjour 发现）；确认同一 Wi-Fi |
 | 过几天 App 打不开了 | 免费账号签的包 7 天过期，重跑一次安装即可续上 |
 | 只能装几个 App | 免费账号最多同时 3 个自签 App |
+| 装上后是白图标 / 没图标 | `ASSETCATALOG_COMPILER_APPICON_NAME` 与图标资源名不一致（详见下方「App Icon」）。另外 tvOS 会缓存图标，先删掉旧 App 再装 |
 | push 报 `Author identity unknown` | 没配 git 身份 |
 | push 报 `src refspec main does not match any` | 还没有任何 commit（通常是身份报错导致 commit 没成） |
 | push 报 `Permission denied (publickey)` | 公钥没加到 GitHub：`pbcopy < ~/.ssh/id_ed25519.pub` 后去 github.com/settings/keys 粘贴 |
@@ -206,12 +212,36 @@ tvOS 上能用的侧载工具其实很少：
 - **播放器用 SwiftUI 的 `VideoPlayer`**：不要自己用 `UIViewControllerRepresentable`
   去包 `AVPlayerViewController`——在 SwiftUI 视图树里嵌 UIKit 播放器不是官方推荐做法，
   容易出现遥控器焦点/控制条异常。`VideoPlayer` 在 tvOS 上内部就是系统那套播放器。
-- **tvOS 的 App Icon 必须用 `brandassets`，不能用 `AppIcon.appiconset`** ← 本项目踩过的最大一个坑。
-  tvOS 不接受 iOS 那种扁平图标集。用 appiconset 时 actool 只报一句轻描淡写的
-  `The app icon set "AppIcon" has 3 unassigned children.`，**构建照样成功**，
-  但图标压根没编进 `Assets.car` —— 装到 Apple TV 上就是白图标，而且很容易被当成
-  「构建成功了所以没问题」而忽略。
-  正确做法是分层图标栈 `Assets.xcassets/App Icon & Top Shelf Image.brandassets/`：
+- **App Icon（白图标）—— 本项目踩了两轮才定位的坑。** 症状：ipa 能装能跑，
+  Apple TV 桌面却是白图标。**真正的根因不是图标资源格式，而是 pbxproj 里的名字对不上**：
+
+  xcodebuild 拿 `ASSETCATALOG_COMPILER_APPICON_NAME` 的值去拼 actool 的
+  `--app-icon <值>`。手写/模板改的工程里这项常是 Xcode 默认的 **`AppIcon`**，
+  而 tvOS 的图标资源叫 **`App Icon & Top Shelf Image.brandassets`**。名字对不上 →
+  actool **找不到就静默跳过** → 构建 exit 0，图标从不进 `Assets.car` → 白图标。
+
+  修法（Debug / Release 两处都要改）：
+
+  ```
+  ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+  ```
+
+  这个写法对照真实 tvOS 项目 `HeroTransitions/Hero` 的 pbxproj 确认过
+  （它的 tvOS target 用这个值，iOS target 才用 `AppIcon`）。
+
+  **`The app icon set "AppIcon" has N unassigned children.` 这类警告不要当无害提示**，
+  它就是这个坑唯一的线索。
+
+  ⚠️ 改完**必须验证，不能假设**——构建脚本里已经加了这道闸：
+
+  ```bash
+  xcrun --sdk appletvos assetutil --info "$APP/Assets.car"
+  # 成功时应看到 App Icon - Small/Front/Content、App Icon - Large/Front/Content
+  ```
+
+  不通过就当作构建失败，别让白图标的 ipa 发出去。
+
+- **tvOS 图标资源要用 `brandassets` 分层图标栈**（不是 iOS 那种扁平 `appiconset`）：
 
   ```
   App Icon & Top Shelf Image.brandassets/
@@ -232,11 +262,13 @@ tvOS 上能用的侧载工具其实很少：
   这套结构 1:1 抄自真实 tvOS 项目（Hero / SwiftyStoreKit / R.swift 的示例工程），
   不要自己发明。
 
-- **`ASSETCATALOG_COMPILER_APPICON_NAME` 对 brandassets 该填什么，各版 Xcode 不一致**：
-  默认值 `AppIcon` 在 tvOS 上找不到对应的 appiconset，就会退回"没图标"。
-  所以 `.github/build-tvos.sh` 会依次试 4 种取值（默认 / brandassets 名 / "App Icon" / 空），
-  每种都用 `assetutil --info Assets.car` 确认 AppIcon 真的编进去了才收工，取第一个成功的。
-  这样不管 Xcode 版本怎么变，都能自动选对。
+- **装新包前先在电视上删掉旧版 App**：tvOS 会缓存图标，直接覆盖安装有时仍显示旧的白图标。
+
+- **CI 内部过程看不到时**：GitHub 的 job 日志匿名下载返回 403（需 admin 权限），
+  Artifacts 也要登录才能下。所以 `.github/build-tvos.sh` 会把诊断报告写成
+  `.github/icon-report.md`，由 workflow 用 GITHUB_TOKEN（需 `permissions: contents: write`）
+  提交回仓库，本机 `git pull` 就能读到。
+
 - **海报和部分源是 http**：工程的 `Info.plist` 里已放开 ATS（`NSAllowsArbitraryLoads`），
   否则 iOS/tvOS 会直接拦掉明文 http 请求。全站 https 后可以删掉这段。
 - **`HEAD` 请求会 502**：部分采集站的 m3u8 服务器不支持 HEAD，但 `GET` 正常。

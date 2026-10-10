@@ -22,6 +22,8 @@ REPORT=".github/icon-report.md"
 ICONSET="$PWD/KVideoTV/Assets.xcassets"
 
 log () { echo "$@" | tee -a "$REPORT"; }
+# 把命令输出同时写进报告（log 只能接字符串，管道输出会被漏掉）
+logcmd () { "$@" 2>&1 | tee -a "$REPORT"; }
 
 : > "$REPORT"
 log "# tvOS 图标诊断报告"
@@ -127,11 +129,11 @@ try_one () {
   log "xcodebuild exit=$rc"
   log ""
   log "-- actool 调用（看 --app-icon 的值）--"
-  grep -oE '\-\-app-icon [^ ]*' "/tmp/build_$name.log" | head -2
+  grep -oE '\-\-app-icon [^ ]*' "/tmp/build_$name.log" | head -3 | tee -a "$REPORT"
   log ""
   log "-- actool 警告/错误 --"
   grep -iE "unassigned|appicon|app icon|actool.*(error|warning)|error:" "/tmp/build_$name.log" \
-    | head -12
+    | head -12 | tee -a "$REPORT"
   log '```'
 
   if [ "$rc" -ne 0 ]; then
@@ -142,14 +144,16 @@ try_one () {
 
   log "**产物内容**"
   log '```'
-  ls -la "$out/$TARGET.app" 2>/dev/null | head -25
+  ls -la "$out/$TARGET.app" 2>/dev/null | head -25 | tee -a "$REPORT"
   log ""
   log "-- Info.plist 里与图标有关的键 --"
   plutil -p "$out/$TARGET.app/Info.plist" 2>/dev/null \
-    | grep -iE "Icon|CFBundleIcons|CFBundleIconName|PrimaryIcon" || echo "  (没有图标相关键)"
+    | grep -iE "Icon|CFBundleIcons|CFBundleIconName|PrimaryIcon" | tee -a "$REPORT" \
+    || echo "  (没有图标相关键)" | tee -a "$REPORT"
   log ""
-  log "-- AppIcon 图片文件是否落进 bundle --"
-  ls "$out/$TARGET.app" 2>/dev/null | grep -i icon || echo "  (bundle 根目录没有 icon 文件)"
+  log "-- bundle 根目录是否有 icon 文件 --"
+  ls "$out/$TARGET.app" 2>/dev/null | grep -i icon | tee -a "$REPORT" \
+    || echo "  (没有 —— tvOS 走 Assets.car，属正常)" | tee -a "$REPORT"
   log '```'
   log "**Assets.car 检查**"
   log '```'
