@@ -1,0 +1,69 @@
+name: Probe tvOS AppIcon
+
+# 诊断用：查清这版工程为什么构建出的 ipa 在 Apple TV 上没有图标。
+# 不属于正常发布流程，排查完可以删掉这个文件。
+#
+# 做两件事：
+#   1. 完整构建一次，解剖 .app 产物（Info.plist 有没有图标键、Assets.car 里有没有 AppIcon）
+#   2. 用 actool 逐个试各种 Contents.json 写法，比较哪种 0 警告且真的编出 AppIcon
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/probe-appicon.yml"
+      - ".github/probe-appicon.py"
+
+jobs:
+  probe:
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 环境信息
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i tvos || true
+
+      - name: 基线构建 + 解剖产物
+        run: |
+          set -uo pipefail
+          xcodebuild \
+            -project ./KVideoTV.xcodeproj \
+            -target KVideoTV \
+            -configuration Release \
+            -sdk appletvos \
+            CONFIGURATION_BUILD_DIR="$PWD/out" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tail -25
+
+          APP="$PWD/out/KVideoTV.app"
+          echo ""
+          echo "=========== .app 内容 ==========="
+          ls -la "$APP" || true
+
+          echo ""
+          echo "=========== Assets.car ==========="
+          if [ -f "$APP/Assets.car" ]; then
+            ls -la "$APP/Assets.car"
+          else
+            echo "!! 没有 Assets.car"
+          fi
+
+          echo ""
+          echo "=========== Info.plist 里的图标相关键 ==========="
+          plutil -p "$APP/Info.plist" 2>/dev/null | grep -iE "icon" || echo "!! Info.plist 里没有任何 icon 键（这本身就是问题）"
+
+          echo ""
+          echo "=========== Assets.car 里包含的 asset ==========="
+          xcrun --sdk appletvos assetutil --info "$APP/Assets.car" 2>/dev/null \
+            | grep -iE '"Name"|"AssetType"|AppIcon|Icon' | head -40 \
+            || echo "(assetutil 读取失败)"
+
+      - name: 逐格式对比 actool
+        run: python3 .github/probe-appicon.py
