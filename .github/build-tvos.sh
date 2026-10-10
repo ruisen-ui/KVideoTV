@@ -157,17 +157,32 @@ try_one () {
   log '```'
   log "**Assets.car 检查**"
   log '```'
+  local icon_ok=0
   if icon_report "$out/$TARGET.app"; then
+    icon_ok=1
     log "  ✅ 图标已编入 Assets.car"
+  else
+    log "  ❌ Assets.car 里没有图标"
+  fi
+  log '```'
+
+  # 关键闸门：actool 报 error 但 xcodebuild 仍 exit 0 的坑（图标不完整也放行）。
+  # 例：imagestack 只有一层有内容 →
+  #   error: The image stack "..." must have at least 2 layers with applicable content.
+  local nerr
+  nerr=$(grep -c "com.apple.actool.document.errors" "/tmp/build_$name.log")
+  if [ "$nerr" -gt 0 ]; then
+    log "  ⚠ 检测到 actool document errors（$nerr 处）→ 图标可能不完整，按失败处理"
+    return 1
+  fi
+
+  if [ "$icon_ok" -eq 1 ]; then
     printf '%s' "$out" > /tmp/winner
-    log '```'
     log ""
     log "## 结论"
-    log "方案 **$name** 成功，图标已进入 Assets.car。"
+    log "方案 **$name** 成功：图标已进入 Assets.car，且 actool 无 error。"
     return 0
   fi
-  log "  ❌ Assets.car 里没有图标"
-  log '```'
   log ""
   return 1
 }
