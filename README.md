@@ -262,6 +262,18 @@ tvOS 上能用的侧载工具其实很少：
   这套结构 1:1 抄自真实 tvOS 项目（Hero / SwiftyStoreKit / R.swift 的示例工程），
   不要自己发明。
 
+- **imagestack 至少要 2 层有图**（上一个坑的续集）：只给 Front 填图、Middle/Back
+  留空时，actool 会报
+
+  ```
+  error: The image stack "App Icon - Small" must have at least 2 layers with applicable content.
+  ```
+
+  而 **xcodebuild 仍然 exit 0**。所以本工程三层都放了内容：
+  Back = 铺满渐变底、Middle = 中心光晕（视差景深）、Front = 播放三角 + KVideo 字标
+  （透明底、居中）。`.github/build-tvos.sh` 里加了闸门：构建日志只要出现
+  `com.apple.actool.document.errors` 就按失败处理，不信 exit code。
+
 - **装新包前先在电视上删掉旧版 App**：tvOS 会缓存图标，直接覆盖安装有时仍显示旧的白图标。
 
 - **CI 内部过程看不到时**：GitHub 的 job 日志匿名下载返回 403（需 admin 权限），
