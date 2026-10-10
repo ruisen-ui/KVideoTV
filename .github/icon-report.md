@@ -1,6 +1,6 @@
 # tvOS 图标诊断报告
 
-生成时间（UTC）: 2026-10-10 01:08:38
+生成时间（UTC）: 2026-10-10 01:24:33
 Xcode: Xcode 16.4 Build version 16F6 
 SDK: tvOS SDKs:
 
@@ -22,15 +22,31 @@ Assets.xcassets/Contents.json
 xcodebuild exit=0
 
 -- actool 调用（看 --app-icon 的值）--
+--app-icon App\
+--app-icon App\
 
 -- actool 警告/错误 --
+    /Applications/Xcode_16.4.app/Contents/Developer/usr/bin/actool /Users/runner/work/KVideoTV/KVideoTV/KVideoTV/Preview\ Content/Preview\ Assets.xcassets /Users/runner/work/KVideoTV/KVideoTV/KVideoTV/Assets.xcassets --compile /Users/runner/work/KVideoTV/KVideoTV/out_A_brandassets/KVideoTV.app --output-format human-readable-text --notices --warnings --export-dependency-info /Users/runner/work/KVideoTV/KVideoTV/build/KVideoTV.build/Release-appletvos/KVideoTV.build/assetcatalog_dependencies --output-partial-info-plist /Users/runner/work/KVideoTV/KVideoTV/build/KVideoTV.build/Release-appletvos/KVideoTV.build/assetcatalog_generated_info.plist --app-icon App\ Icon\ \&\ Top\ Shelf\ Image --accent-color AccentColor --compress-pngs --enable-on-demand-resources YES --development-region en --leaderboard-identifier-prefix KVideoTV.game-center.leaderboard. --leaderboard-set-identifier-prefix KVideoTV.game-center.leaderboard-set. --target-device tv --minimum-deployment-target 16.0 --platform appletvos --bundle-identifier com.example.KVideoTV --generate-swift-asset-symbols /Users/runner/work/KVideoTV/KVideoTV/build/KVideoTV.build/Release-appletvos/KVideoTV.build/DerivedSources/GeneratedAssetSymbols.swift --generate-objc-asset-symbols /Users/runner/work/KVideoTV/KVideoTV/build/KVideoTV.build/Release-appletvos/KVideoTV.build/DerivedSources/GeneratedAssetSymbols.h --generate-asset-symbol-index /Users/runner/work/KVideoTV/KVideoTV/build/KVideoTV.build/Release-appletvos/KVideoTV.build/DerivedSources/GeneratedAssetSymbols-Index.plist
+    /Applications/Xcode_16.4.app/Contents/Developer/usr/bin/actool /Users/runner/work/KVideoTV/KVideoTV/KVideoTV/Preview\ Content/Preview\ Assets.xcassets /Users/runner/work/KVideoTV/KVideoTV/KVideoTV/Assets.xcassets --compile /Users/runner/work/KVideoTV/KVideoTV/build/KVideoTV.build/Release-appletvos/KVideoTV.build/assetcatalog_output/thinned --output-format human-readable-text --notices --warnings --export-dependency-info /Users/runner/work/KVideoTV/KVideoTV/build/KVideoTV.build/Release-appletvos/KVideoTV.build/assetcatalog_dependencies_thinned --output-partial-info-plist /Users/runner/work/KVideoTV/KVideoTV/build/KVideoTV.build/Release-appletvos/KVideoTV.build/assetcatalog_generated_info.plist_thinned --app-icon App\ Icon\ \&\ Top\ Shelf\ Image --accent-color AccentColor --compress-pngs --enable-on-demand-resources YES --development-region en --leaderboard-identifier-prefix KVideoTV.game-center.leaderboard. --leaderboard-set-identifier-prefix KVideoTV.game-center.leaderboard-set. --target-device tv --minimum-deployment-target 16.0 --platform appletvos
+/* com.apple.actool.document.errors */
+/Users/runner/work/KVideoTV/KVideoTV/KVideoTV/Assets.xcassets:./App Icon & Top Shelf Image.brandassets/App Icon - Small.imagestack: error: The image stack "App Icon - Small" must have at least 2 layers with applicable content. Although it has 3 layers, only 1 has applicable content.
 ```
 **产物内容**
 ```
+total 1520
+drwxr-xr-x  6 runner  staff     192 Oct 10 01:25 .
+drwxr-xr-x@ 5 runner  staff     160 Oct 10 01:25 ..
+-rw-r--r--  1 runner  staff  257423 Oct 10 01:25 Assets.car
+-rw-r--r--  1 runner  staff    1210 Oct 10 01:25 Info.plist
+-rwxr-xr-x  1 runner  staff  510576 Oct 10 01:24 KVideoTV
+-rw-r--r--  1 runner  staff       8 Oct 10 01:25 PkgInfo
 
 -- Info.plist 里与图标有关的键 --
+  "CFBundleIcons" => {
+    "CFBundlePrimaryIcon" => "App Icon - Small"
 
--- AppIcon 图片文件是否落进 bundle --
+-- bundle 根目录是否有 icon 文件 --
+  (没有 —— tvOS 走 Assets.car，属正常)
 ```
 **Assets.car 检查**
 ```
