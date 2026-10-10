@@ -140,51 +140,26 @@ tvOS 上能用的侧载工具其实很少：
 | TrollStore | ❌ | 依赖 CoreTrust 漏洞，只覆盖很老的 tvOS |
 | Apple Configurator | ⚠️ | 能无线装 ipa，但要求 ipa 已经签好名，绕不开证书 |
 
-### 当前进度（本机已完成的）
+### 进度：已打通 ✅
 
-- ✅ git 身份已配（`ruisen-ui` / `ruisen-ui@users.noreply.github.com`）
-- ✅ 首次提交已做，分支 `main`，remote 已指向 `git@github.com:ruisen-ui/KVideoTV.git`
-- ✅ SSH 密钥已生成（`~/.ssh/id_ed25519`）
-- ⬜ **公钥还没加到 GitHub** ← 卡在这一步
-- ⬜ GitHub 上还没建仓库
+- ✅ 代码已推送 → https://github.com/ruisen-ui/KVideoTV （public 仓库）
+- ✅ 云端编译通过 → [Actions run 38008585972](https://github.com/ruisen-ui/KVideoTV/actions/runs/38008585972)
+- ✅ 未签名 ipa 已生成 → Artifacts 名 `KVideoTV-unsigned-ipa`，约 0.12 MB，保留 30 天
+- ⬜ 待你做：下载 ipa → Sideloadly 用自己 Apple ID 签名 → 装到 Apple TV
 
-### 接下来要做
+### 下载 ipa
 
-**1. 清掉残留的 git 配置锁**（家目录里躺着一个写了一半的残骸）：
+打开 https://github.com/ruisen-ui/KVideoTV/actions → 进最新那次绿色的
+`Build tvOS IPA (unsigned)` → 页面底部 **Artifacts** → 点 `KVideoTV-unsigned-ipa`
+下载 zip，解压得到 `KVideoTV-unsigned.ipa`。
 
-```bash
-rm -f ~/.gitconfig.lock
-```
+> GitHub 的 Artifacts **必须登录账号**才能下载（匿名请求返回 401）。
+> 另外本机实测直连 github.com 网页会超时，**浏览器需要挂代理**（git over SSH 反而不需要）。
 
-**2. 把公钥加到 GitHub**：
+以后代码一改、推上去，Actions 就自动重新编译。想手动触发：
+仓库 Actions 页面 → 左侧 `Build tvOS IPA (unsigned)` → Run workflow。
 
-```bash
-pbcopy < ~/.ssh/id_ed25519.pub      # 公钥进剪贴板
-```
-
-打开 https://github.com/settings/keys → New SSH key → Title 随便填（如 `MacBookAir`）
-→ Key 框粘贴 → Add SSH key。
-
-验证：`ssh -T git@github.com`，看到 `Hi ruisen-ui! You've successfully authenticated`
-就对了。
-
-**3. 建仓库**：https://github.com/new → 名字填 `KVideoTV` → Private / Public 都行 →
-**不要勾** Add a README / .gitignore / license（勾了会和本地提交冲突，push 被拒）。
-
-**4. 推送**：
-
-```bash
-cd /Users/xyyq/WorkBuddy/2026-10-09-22-00-35/KVideoTV
-git push -u origin main
-```
-
-> ⚠️ 命令里的用户名**直接写字面量**，不要带 `<` `>` 尖括号。
-> zsh 会把 `<` 当成输入重定向，报成 `no such file or directory`，命令根本不会执行。
-
-**5. 云端编译**：仓库 Actions 页面 → 左侧 `Build tvOS IPA (unsigned)` → Run workflow。
-约 2-3 分钟跑完，在该次运行的 Artifacts 里下载 `KVideoTV-unsigned-ipa`。
-
-**6. 侧载到电视**：
+### 侧载到电视
 
 1. 本机装 [Sideloadly](https://sideloadly.io)（几十 MB，**不需要 Xcode**）
 2. 打开 Sideloadly → ipa 拖进去 → Apple ID 填自己的 → 设备选你的 Apple TV → Start
@@ -221,6 +196,20 @@ git push -u origin main
 
 ## 已知的坑 / 注意事项
 
+- **tvOS 没有 WebKit**：`import WebKit` 在 tvOS 上直接报 `no such module`。
+  这是平台限制（Apple 官方从未给 tvOS 提供 WebKit.framework），任何「网页壳」思路在
+  Apple TV 上都不成立，必须走原生。
+- **tvOS 没有 `fullScreenCover`**：SwiftUI 的 `fullScreenCover` 在 tvOS 上标记为
+  **unavailable**，写了会编译失败。本工程的播放页改用 `NavigationStack` + `NavigationPath`
+  推入（播放数据 `Playing` 因此必须 `Hashable`），遥控器 **Menu 键会自动 pop 返回**，
+  比模态更符合 Apple TV 习惯。
+- **播放器用 SwiftUI 的 `VideoPlayer`**：不要自己用 `UIViewControllerRepresentable`
+  去包 `AVPlayerViewController`——在 SwiftUI 视图树里嵌 UIKit 播放器不是官方推荐做法，
+  容易出现遥控器焦点/控制条异常。`VideoPlayer` 在 tvOS 上内部就是系统那套播放器。
+- **App Icon 有 actool 警告**：构建日志里会出现
+  `The app icon set "AppIcon" has 3 unassigned children.`。这是 Xcode 新版对 tvOS
+  AppIcon 槽位的规范差异，**不影响构建和安装**；若电视桌面显示成白图标，用 Xcode
+  打开工程双击 `Assets.xcassets` 让它自动规范化一次即可。
 - **海报和部分源是 http**：工程的 `Info.plist` 里已放开 ATS（`NSAllowsArbitraryLoads`），
   否则 iOS/tvOS 会直接拦掉明文 http 请求。全站 https 后可以删掉这段。
 - **`HEAD` 请求会 502**：部分采集站的 m3u8 服务器不支持 HEAD，但 `GET` 正常。
