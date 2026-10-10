@@ -1,6 +1,6 @@
 # tvOS 图标诊断报告
 
-生成时间（UTC）: 2026-10-10 01:24:33
+生成时间（UTC）: 2026-10-10 01:38:48
 Xcode: Xcode 16.4 Build version 16F6 
 SDK: tvOS SDKs:
 
@@ -28,18 +28,16 @@ xcodebuild exit=0
 -- actool 警告/错误 --
     /Applications/Xcode_16.4.app/Contents/Developer/usr/bin/actool /Users/runner/work/KVideoTV/KVideoTV/KVideoTV/Preview\ Content/Preview\ Assets.xcassets /Users/runner/work/KVideoTV/KVideoTV/KVideoTV/Assets.xcassets --compile /Users/runner/work/KVideoTV/KVideoTV/out_A_brandassets/KVideoTV.app --output-format human-readable-text --notices --warnings --export-dependency-info /Users/runner/work/KVideoTV/KVideoTV/build/KVideoTV.build/Release-appletvos/KVideoTV.build/assetcatalog_dependencies --output-partial-info-plist /Users/runner/work/KVideoTV/KVideoTV/build/KVideoTV.build/Release-appletvos/KVideoTV.build/assetcatalog_generated_info.plist --app-icon App\ Icon\ \&\ Top\ Shelf\ Image --accent-color AccentColor --compress-pngs --enable-on-demand-resources YES --development-region en --leaderboard-identifier-prefix KVideoTV.game-center.leaderboard. --leaderboard-set-identifier-prefix KVideoTV.game-center.leaderboard-set. --target-device tv --minimum-deployment-target 16.0 --platform appletvos --bundle-identifier com.example.KVideoTV --generate-swift-asset-symbols /Users/runner/work/KVideoTV/KVideoTV/build/KVideoTV.build/Release-appletvos/KVideoTV.build/DerivedSources/GeneratedAssetSymbols.swift --generate-objc-asset-symbols /Users/runner/work/KVideoTV/KVideoTV/build/KVideoTV.build/Release-appletvos/KVideoTV.build/DerivedSources/GeneratedAssetSymbols.h --generate-asset-symbol-index /Users/runner/work/KVideoTV/KVideoTV/build/KVideoTV.build/Release-appletvos/KVideoTV.build/DerivedSources/GeneratedAssetSymbols-Index.plist
     /Applications/Xcode_16.4.app/Contents/Developer/usr/bin/actool /Users/runner/work/KVideoTV/KVideoTV/KVideoTV/Preview\ Content/Preview\ Assets.xcassets /Users/runner/work/KVideoTV/KVideoTV/KVideoTV/Assets.xcassets --compile /Users/runner/work/KVideoTV/KVideoTV/build/KVideoTV.build/Release-appletvos/KVideoTV.build/assetcatalog_output/thinned --output-format human-readable-text --notices --warnings --export-dependency-info /Users/runner/work/KVideoTV/KVideoTV/build/KVideoTV.build/Release-appletvos/KVideoTV.build/assetcatalog_dependencies_thinned --output-partial-info-plist /Users/runner/work/KVideoTV/KVideoTV/build/KVideoTV.build/Release-appletvos/KVideoTV.build/assetcatalog_generated_info.plist_thinned --app-icon App\ Icon\ \&\ Top\ Shelf\ Image --accent-color AccentColor --compress-pngs --enable-on-demand-resources YES --development-region en --leaderboard-identifier-prefix KVideoTV.game-center.leaderboard. --leaderboard-set-identifier-prefix KVideoTV.game-center.leaderboard-set. --target-device tv --minimum-deployment-target 16.0 --platform appletvos
-/* com.apple.actool.document.errors */
-/Users/runner/work/KVideoTV/KVideoTV/KVideoTV/Assets.xcassets:./App Icon & Top Shelf Image.brandassets/App Icon - Small.imagestack: error: The image stack "App Icon - Small" must have at least 2 layers with applicable content. Although it has 3 layers, only 1 has applicable content.
 ```
 **产物内容**
 ```
-total 1520
-drwxr-xr-x  6 runner  staff     192 Oct 10 01:25 .
-drwxr-xr-x@ 5 runner  staff     160 Oct 10 01:25 ..
--rw-r--r--  1 runner  staff  257423 Oct 10 01:25 Assets.car
--rw-r--r--  1 runner  staff    1210 Oct 10 01:25 Info.plist
--rwxr-xr-x  1 runner  staff  510576 Oct 10 01:24 KVideoTV
--rw-r--r--  1 runner  staff       8 Oct 10 01:25 PkgInfo
+total 2240
+drwxr-xr-x  6 runner  staff     192 Oct 10 01:39 .
+drwxr-xr-x@ 5 runner  staff     160 Oct 10 01:39 ..
+-rw-r--r--  1 runner  staff  623359 Oct 10 01:39 Assets.car
+-rw-r--r--  1 runner  staff    1210 Oct 10 01:39 Info.plist
+-rwxr-xr-x  1 runner  staff  510576 Oct 10 01:39 KVideoTV
+-rw-r--r--  1 runner  staff       8 Oct 10 01:39 PkgInfo
 
 -- Info.plist 里与图标有关的键 --
   "CFBundleIcons" => {
@@ -50,9 +48,9 @@ drwxr-xr-x@ 5 runner  staff     160 Oct 10 01:25 ..
 ```
 **Assets.car 检查**
 ```
-  Assets.car 内容: ?|AccentColor|App Icon - Large/Front/Content|App Icon - Small/Front/Content|App Icon - Small/Front/Content
+  Assets.car 内容: ?|AccentColor|App Icon - Large/Back/Content|App Icon - Large/Front/Content|App Icon - Large/Middle/Content|App Icon - Small|App Icon - Small|App Icon - Small|App Icon - Small|App Icon - Small|App Icon - Small|App Icon - Small/Back/Content|App Icon - Small/Back/Content|App Icon - Small/Front/Content|App Icon - Small/Front/Content|App Icon - Small/Middle/Content|App Icon - Small/Middle/Content|App Icon - Small|App Icon - Small
   ✅ 图标已编入 Assets.car
 ```
 
 ## 结论
-方案 **A_brandassets** 成功，图标已进入 Assets.car。
+方案 **A_brandassets** 成功：图标已进入 Assets.car，且 actool 无 error。
