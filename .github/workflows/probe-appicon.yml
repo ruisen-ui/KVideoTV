@@ -1,11 +1,10 @@
 name: Probe tvOS AppIcon
 
-# 诊断用：查清这版工程为什么构建出的 ipa 在 Apple TV 上没有图标。
-# 不属于正常发布流程，排查完可以删掉这个文件。
+# 诊断用：查清这版工程构建出的 ipa 在 Apple TV 上为什么没有图标。
+# 排查完可以删掉这个文件和 .github/probe-appicon.py。
 #
-# 做两件事：
-#   1. 完整构建一次，解剖 .app 产物（Info.plist 有没有图标键、Assets.car 里有没有 AppIcon）
-#   2. 用 actool 逐个试各种 Contents.json 写法，比较哪种 0 警告且真的编出 AppIcon
+# 为什么要回写仓库：GitHub 的 job 日志匿名下载返回 403（需要 admin 权限），
+# 直接看不了。所以把结果写成 probe-result.txt 提交回 main，本机 git pull 就能读。
 
 on:
   workflow_dispatch:
@@ -13,6 +12,9 @@ on:
     paths:
       - ".github/workflows/probe-appicon.yml"
       - ".github/probe-appicon.py"
+
+permissions:
+  contents: write
 
 jobs:
   probe:
@@ -28,42 +30,23 @@ jobs:
           xcodebuild -version
           xcodebuild -showsdks | grep -i tvos || true
 
-      - name: 基线构建 + 解剖产物
+      - name: 跑探针
         run: |
           set -uo pipefail
-          xcodebuild \
-            -project ./KVideoTV.xcodeproj \
-            -target KVideoTV \
-            -configuration Release \
-            -sdk appletvos \
-            CONFIGURATION_BUILD_DIR="$PWD/out" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            build 2>&1 | tail -25
+          python3 .github/probe-appicon.py > probe-result.txt 2>&1 || true
+          echo "---------- 结果预览（末尾 60 行）----------"
+          tail -60 probe-result.txt
 
-          APP="$PWD/out/KVideoTV.app"
-          echo ""
-          echo "=========== .app 内容 ==========="
-          ls -la "$APP" || true
-
-          echo ""
-          echo "=========== Assets.car ==========="
-          if [ -f "$APP/Assets.car" ]; then
-            ls -la "$APP/Assets.car"
-          else
-            echo "!! 没有 Assets.car"
+      - name: 结果提交回仓库
+        if: always()
+        run: |
+          set -uo pipefail
+          if [ ! -s probe-result.txt ]; then
+            echo "探针没产出内容，写一条说明"
+            echo "probe produced no output" > probe-result.txt
           fi
-
-          echo ""
-          echo "=========== Info.plist 里的图标相关键 ==========="
-          plutil -p "$APP/Info.plist" 2>/dev/null | grep -iE "icon" || echo "!! Info.plist 里没有任何 icon 键（这本身就是问题）"
-
-          echo ""
-          echo "=========== Assets.car 里包含的 asset ==========="
-          xcrun --sdk appletvos assetutil --info "$APP/Assets.car" 2>/dev/null \
-            | grep -iE '"Name"|"AssetType"|AppIcon|Icon' | head -40 \
-            || echo "(assetutil 读取失败)"
-
-      - name: 逐格式对比 actool
-        run: python3 .github/probe-appicon.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f probe-result.txt
+          git commit -m "probe result [skip ci]" || echo "(没有变化，跳过)"
+          git push origin HEAD:main || echo "(推送失败)"
