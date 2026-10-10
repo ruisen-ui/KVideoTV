@@ -4,6 +4,9 @@ name: Build tvOS IPA (unsigned)
 # 这样本机不需要安装 Xcode。
 #
 # 触发：仓库 Actions 页面点 "Run workflow"，或推到 main 分支。
+#
+# 注意：本 workflow 会把 .github/icon-report.md（图标诊断报告）提交回仓库，
+# 因为 GitHub 的 job 日志未认证下载返回 403，本地读不到。
 
 on:
   workflow_dispatch:
@@ -11,8 +14,12 @@ on:
     branches: [ main ]
     paths:
       - "KVideoTV/**"
+      - "KVideoTV.xcodeproj/**"
       - ".github/workflows/build-tvos-ipa.yml"
       - ".github/build-tvos.sh"
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -28,7 +35,7 @@ jobs:
           xcodebuild -version
           xcodebuild -showsdks | grep -i tvos || true
 
-      - name: 编译 tvOS（不签名，自动选出带图标的方案）
+      - name: 编译 tvOS（不签名）+ 图标诊断
         run: bash .github/build-tvos.sh
 
       - name: 打包成 .ipa
@@ -43,9 +50,6 @@ jobs:
           fi
           echo "== .app 内容 =="
           ls -la "$APP"
-          echo "== 确认图标进了 Assets.car =="
-          xcrun --sdk appletvos assetutil --info "$APP/Assets.car" | grep -i -m6 "AppIcon" \
-            || echo "(未匹配到 AppIcon，仍继续打包)"
           rm -rf Payload KVideoTV-unsigned.ipa
           mkdir -p Payload
           cp -R "$APP" Payload/
@@ -59,3 +63,20 @@ jobs:
           path: KVideoTV-unsigned.ipa
           if-no-files-found: error
           retention-days: 30
+
+      - name: 回写图标诊断报告
+        if: always()
+        run: |
+          if [ ! -f .github/icon-report.md ]; then
+            echo "没有报告文件，跳过"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f .github/icon-report.md
+          if git diff --cached --quiet; then
+            echo "报告无变化，跳过提交"
+            exit 0
+          fi
+          git commit -q -m "ci: tvOS 图标诊断报告 [skip ci]"
+          git push || echo "::warning::报告推送失败（不影响构建）"
