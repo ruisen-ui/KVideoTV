@@ -17,7 +17,7 @@
 //    1. 搜索/列表  →  <采集站>/api.php/provide/vod?ac=videolist&wd=关键词  (JSON)
 //    2. 取分集     →  vod_play_url 形如 "第01集$https://...#第02集$https://..."
 //    3. 解析播放址 →  若为 /share/xxx 播放页，抓页面正则提取 m3u8
-//    4. 播放       →  AVPlayerViewController 播放 m3u8
+//    4. 播放       →  SwiftUI VideoPlayer（tvOS 内部即系统 AVPlayerViewController）
 //
 
 import SwiftUI
@@ -406,7 +406,8 @@ final class Aggregator: ObservableObject {
 
 // MARK: - 播放数据
 
-struct Playing: Identifiable {
+/// 需要能作为 NavigationStack 的 path 元素，故必须 Hashable。
+struct Playing: Identifiable, Hashable {
     let id = UUID()
     let title: String
     let episodes: [Episode]
@@ -418,29 +419,33 @@ struct Playing: Identifiable {
 struct ContentView: View {
     @StateObject private var aggregator = Aggregator()
     @State private var keyword = ""
-    @State private var path: [VodItem] = []
-    @State private var playing: Playing?
+    @State private var path = NavigationPath()
 
     private let columns = Array(
         repeating: GridItem(.fixed(300), spacing: 40),
         count: 5
     )
 
+    // 播放页用 NavigationStack 推入，而不是 fullScreenCover：
+    // fullScreenCover 在 tvOS 上不可用（编译期直接报 unavailable），
+    // 而 push 进导航栈在 tvOS 上是原生行为，遥控器 Menu 键会自动返回。
     var body: some View {
         NavigationStack(path: $path) {
             home
                 .navigationDestination(for: VodItem.self) { item in
                     DetailView(item: item) { episodes, startIndex in
-                        playing = Playing(
-                            title: item.name,
-                            episodes: episodes,
-                            startIndex: startIndex
+                        path.append(
+                            Playing(
+                                title: item.name,
+                                episodes: episodes,
+                                startIndex: startIndex
+                            )
                         )
                     }
                 }
-        }
-        .fullScreenCover(item: $playing) { session in
-            PlayerScreen(playing: session)
+                .navigationDestination(for: Playing.self) { session in
+                    PlayerScreen(playing: session)
+                }
         }
         .task {
             await aggregator.loadLatest()
@@ -474,7 +479,6 @@ struct ContentView: View {
                         NavigationLink(value: item) {
                             PosterCard(item: item)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 60)
@@ -697,7 +701,7 @@ struct PlayerScreen: View {
             Color.black.ignoresSafeArea()
 
             if let player {
-                PlayerContainer(player: player)
+                VideoPlayer(player: player)
                     .ignoresSafeArea()
             }
 
@@ -763,24 +767,6 @@ struct PlayerScreen: View {
         } catch {
             isLoading = false
             errorText = "\(error.localizedDescription)\n\n\(episode.url)"
-        }
-    }
-}
-
-/// tvOS 上的 AVPlayerViewController 包装。
-struct PlayerContainer: UIViewControllerRepresentable {
-    let player: AVPlayer
-
-    func makeUIViewController(context: Context) -> AVPlayerViewController {
-        let controller = AVPlayerViewController()
-        controller.player = player
-        controller.showsPlaybackControls = true
-        return controller
-    }
-
-    func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
-        if controller.player !== player {
-            controller.player = player
         }
     }
 }
