@@ -206,10 +206,37 @@ tvOS 上能用的侧载工具其实很少：
 - **播放器用 SwiftUI 的 `VideoPlayer`**：不要自己用 `UIViewControllerRepresentable`
   去包 `AVPlayerViewController`——在 SwiftUI 视图树里嵌 UIKit 播放器不是官方推荐做法，
   容易出现遥控器焦点/控制条异常。`VideoPlayer` 在 tvOS 上内部就是系统那套播放器。
-- **App Icon 有 actool 警告**：构建日志里会出现
-  `The app icon set "AppIcon" has 3 unassigned children.`。这是 Xcode 新版对 tvOS
-  AppIcon 槽位的规范差异，**不影响构建和安装**；若电视桌面显示成白图标，用 Xcode
-  打开工程双击 `Assets.xcassets` 让它自动规范化一次即可。
+- **tvOS 的 App Icon 必须用 `brandassets`，不能用 `AppIcon.appiconset`** ← 本项目踩过的最大一个坑。
+  tvOS 不接受 iOS 那种扁平图标集。用 appiconset 时 actool 只报一句轻描淡写的
+  `The app icon set "AppIcon" has 3 unassigned children.`，**构建照样成功**，
+  但图标压根没编进 `Assets.car` —— 装到 Apple TV 上就是白图标，而且很容易被当成
+  「构建成功了所以没问题」而忽略。
+  正确做法是分层图标栈 `Assets.xcassets/App Icon & Top Shelf Image.brandassets/`：
+
+  ```
+  App Icon & Top Shelf Image.brandassets/
+    Contents.json                  assets[] 里 role = primary-app-icon
+                                   Small 声明 400x240 / Large 声明 1280x768
+    App Icon - Small.imagestack/
+      Contents.json                layers[] = Front / Middle / Back
+      Front.imagestacklayer/
+        Contents.json              {"info":{...}} 就够
+        Content.imageset/
+          Contents.json            images[] 里带 filename + scale
+          Front.png  Front@2x.png  400x240 / 800x480
+      Middle.imagestacklayer/      可以只留空槽位（不填图）
+      Back.imagestacklayer/
+    App Icon - Large.imagestack/   同构，1280x768 / 2560x1536
+  ```
+
+  这套结构 1:1 抄自真实 tvOS 项目（Hero / SwiftyStoreKit / R.swift 的示例工程），
+  不要自己发明。
+
+- **`ASSETCATALOG_COMPILER_APPICON_NAME` 对 brandassets 该填什么，各版 Xcode 不一致**：
+  默认值 `AppIcon` 在 tvOS 上找不到对应的 appiconset，就会退回"没图标"。
+  所以 `.github/build-tvos.sh` 会依次试 4 种取值（默认 / brandassets 名 / "App Icon" / 空），
+  每种都用 `assetutil --info Assets.car` 确认 AppIcon 真的编进去了才收工，取第一个成功的。
+  这样不管 Xcode 版本怎么变，都能自动选对。
 - **海报和部分源是 http**：工程的 `Info.plist` 里已放开 ATS（`NSAllowsArbitraryLoads`），
   否则 iOS/tvOS 会直接拦掉明文 http 请求。全站 https 后可以删掉这段。
 - **`HEAD` 请求会 502**：部分采集站的 m3u8 服务器不支持 HEAD，但 `GET` 正常。

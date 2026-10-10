@@ -1,5 +1,8 @@
 build/
 out/
+out_*/
+Payload/
+probe-result.txt
 DerivedData/
 *.ipa
 .DS_Store

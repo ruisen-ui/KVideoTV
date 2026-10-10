@@ -12,11 +12,12 @@ on:
     paths:
       - "KVideoTV/**"
       - ".github/workflows/build-tvos-ipa.yml"
+      - ".github/build-tvos.sh"
 
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: 检出代码
@@ -27,37 +28,24 @@ jobs:
           xcodebuild -version
           xcodebuild -showsdks | grep -i tvos || true
 
-      - name: 编译 tvOS（不签名）
-        run: |
-          set -euo pipefail
-          PROJECT=$(find . -maxdepth 4 -name "KVideoTV.xcodeproj" -type d | head -1)
-          if [ -z "$PROJECT" ]; then
-            echo "::error::找不到 KVideoTV.xcodeproj"
-            exit 1
-          fi
-          echo "工程: $PROJECT"
-          xcodebuild \
-            -project "$PROJECT" \
-            -target KVideoTV \
-            -configuration Release \
-            -sdk appletvos \
-            CONFIGURATION_BUILD_DIR="$PWD/out" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            build
+      - name: 编译 tvOS（不签名，自动选出带图标的方案）
+        run: bash .github/build-tvos.sh
 
       - name: 打包成 .ipa
         run: |
           set -euo pipefail
-          APP="$PWD/out/KVideoTV.app"
+          WINNER=$(cat /tmp/winner)
+          echo "选中的构建目录: $WINNER"
+          APP="$WINNER/KVideoTV.app"
           if [ ! -d "$APP" ]; then
             echo "::error::没找到 $APP"
-            find . -name "*.app" -type d | head -20
             exit 1
           fi
-          echo "产物内容："
+          echo "== .app 内容 =="
           ls -la "$APP"
+          echo "== 确认图标进了 Assets.car =="
+          xcrun --sdk appletvos assetutil --info "$APP/Assets.car" | grep -i -m6 "AppIcon" \
+            || echo "(未匹配到 AppIcon，仍继续打包)"
           rm -rf Payload KVideoTV-unsigned.ipa
           mkdir -p Payload
           cp -R "$APP" Payload/
