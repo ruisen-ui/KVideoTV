@@ -48,9 +48,10 @@ struct VideoSource: Identifiable, Hashable {
         VideoSource(id: "jisu", name: "极速资源", baseUrl: "https://jszyapi.com/api.php/provide/vod"),
     ]
 
-    /// 「分类浏览」固定使用的源。
+    /// 「分类浏览」的默认源（bootstrap 时若它失联会自动切到其他源）。
     /// 分类 ID 是各个采集站自己的一套编号，跨源不可通用；这里挑分类最全、
-    /// 片量最大的非凡资源（实测 9.8 万条 / 30 个分类）作为分类页数据源。
+    /// 片量最大的非凡资源（实测 9.8 万条 / 30 个分类）作为首选，
+    /// 失联时降级到 https 的最大资源（无 type_pid，靠编号区段推断归属）。
     static let catalogSource: VideoSource = builtIn[0]
 
     /// 备用源。实测当前不可用，留在这里方便你换网络环境后重新试：
@@ -67,14 +68,94 @@ struct VideoSource: Identifiable, Hashable {
 // MARK: - 分类
 
 /// 苹果CMS 的分类，对应接口返回的顶层 `class` 数组。
-/// `pid == 0` 的是顶级分类（电影片 / 连续剧 / 综艺片 / 动漫片），其余挂在它下面。
+/// `pid == 0` 的是顶级分类（电影 / 电视剧 / 综艺 / 动漫），其余挂在它下面。
 struct Category: Identifiable, Hashable {
     let id: Int        // type_id
     let pid: Int       // type_pid
-    let name: String   // type_name
+    let name: String   // type_name（已归一化，见 displayName）
 
-    /// 顶级分类只用于顶部导航，这里过滤掉「伦理片」这类不适合客厅场景的边角分类。
-    static let blockedNames: Set<String> = ["伦理片"]
+    // MARK: 顶级导航的名字跟网站叫法走
+
+    static func displayName(_ raw: String) -> String {
+        switch raw {
+        case "电影片": return "电影"
+        case "连续剧": return "电视剧"
+        case "综艺片": return "综艺"
+        case "动漫片": return "动漫"
+        default:       return raw
+        }
+    }
+
+    // MARK: 客厅场景不放的分类
+
+    static let blockedKeywords: [String] = ["伦理", "三级", "两性", "写真"]
+
+    static func isBlocked(_ name: String) -> Bool {
+        blockedKeywords.contains { name.contains($0) }
+    }
+
+    // MARK: pid 缺失时的归属推断
+
+    /// MacCMS 传统分类编号区段（非凡/最大等主流源基本都遵守）。
+    /// 有的源（如最大资源）的 class 里**不返回 type_pid**，只能按编号 + 名字推断归属。
+    static func inferredPid(id: Int, rawName: String) -> Int {
+        switch id {
+        case 1...4:   return 0
+        case 6...12:  return 1          // 动作片…战争片 → 电影
+        case 13...24: return 2          // 国产剧…泰国剧 → 电视剧
+        case 25...28: return 3          // 大陆综艺…欧美综艺 → 综艺
+        case 29...33: return 4          // 国产动漫…海外动漫 → 动漫
+        default:
+            if isBlocked(rawName) { return -1 }
+            if rawName.contains("演唱") || rawName.contains("体育")
+                || rawName.contains("篮球") || rawName.contains("足球")
+                || rawName.contains("斯诺克") { return 3 }
+            if rawName.contains("动漫") || rawName.contains("动画") { return 4 }
+            if rawName.contains("剧") { return 2 }
+            return 1
+        }
+    }
+
+    // MARK: 兜底分类表
+
+    /// 所有源的分类表都拉不到时用的固定结构（非凡资源的编号体系，实测 2026-10）。
+    /// 分类表接口偶发失败时 UI 不至于塌掉；列表请求仍走非凡。
+    static let fallback: [Category] = [
+        Category(id: 1,  pid: 0, name: "电影"),
+        Category(id: 2,  pid: 0, name: "电视剧"),
+        Category(id: 3,  pid: 0, name: "综艺"),
+        Category(id: 4,  pid: 0, name: "动漫"),
+
+        Category(id: 6,  pid: 1, name: "动作片"),
+        Category(id: 7,  pid: 1, name: "喜剧片"),
+        Category(id: 8,  pid: 1, name: "爱情片"),
+        Category(id: 9,  pid: 1, name: "科幻片"),
+        Category(id: 10, pid: 1, name: "恐怖片"),
+        Category(id: 11, pid: 1, name: "剧情片"),
+        Category(id: 12, pid: 1, name: "战争片"),
+        Category(id: 20, pid: 1, name: "记录片"),
+
+        Category(id: 13, pid: 2, name: "国产剧"),
+        Category(id: 14, pid: 2, name: "香港剧"),
+        Category(id: 15, pid: 2, name: "韩国剧"),
+        Category(id: 16, pid: 2, name: "欧美剧"),
+        Category(id: 21, pid: 2, name: "台湾剧"),
+        Category(id: 22, pid: 2, name: "日本剧"),
+        Category(id: 23, pid: 2, name: "海外剧"),
+        Category(id: 24, pid: 2, name: "泰国剧"),
+        Category(id: 36, pid: 2, name: "短剧"),
+
+        Category(id: 25, pid: 3, name: "大陆综艺"),
+        Category(id: 26, pid: 3, name: "港台综艺"),
+        Category(id: 27, pid: 3, name: "日韩综艺"),
+        Category(id: 28, pid: 3, name: "欧美综艺"),
+
+        Category(id: 29, pid: 4, name: "国产动漫"),
+        Category(id: 30, pid: 4, name: "日韩动漫"),
+        Category(id: 31, pid: 4, name: "欧美动漫"),
+        Category(id: 32, pid: 4, name: "港台动漫"),
+        Category(id: 33, pid: 4, name: "海外动漫"),
+    ]
 }
 
 /// 分类页的排序方式。
@@ -302,12 +383,16 @@ enum MacCMS {
     }
 
     /// 分类表。`ac=list` 不带 t 时会返回顶层 `class` 字段。
+    ///
+    /// 两个兼容坑（实测）：
+    /// - 非凡资源带 `type_pid`；**最大资源不返回 type_pid** → 用编号区段 + 名字推断归属
+    /// - 顶级叫法不一（电影片 / 电影），统一走 `Category.displayName` 归一化
     static func categories(source: VideoSource) async throws -> [Category] {
         let response = try await raw(source: source, params: ["ac": "list"])
         return (response.categories ?? []).compactMap { raw in
-            guard let id = raw.type_id, let pid = raw.type_pid,
-                  let name = raw.type_name, !name.isEmpty else { return nil }
-            return Category(id: id, pid: pid, name: name)
+            guard let id = raw.type_id, let name = raw.type_name, !name.isEmpty else { return nil }
+            let pid = raw.type_pid ?? Category.inferredPid(id: id, rawName: name)
+            return Category(id: id, pid: pid, name: Category.displayName(name))
         }
     }
 
@@ -609,9 +694,11 @@ final class Aggregator: ObservableObject {
 
 @MainActor
 final class CatalogStore: ObservableObject {
-    let source = VideoSource.catalogSource
+    /// 分类浏览当前用的源。bootstrap 时按「谁响应就用谁」动态选定
+    /// （非凡优先，但它是 http 明文，电视网络环境下可能失联 → 切到 https 的最大资源）。
+    private var workingSource = VideoSource.catalogSource
 
-    @Published var tops: [Category] = []          // 顶级分类（电影片 / 连续剧 / …）
+    @Published var tops: [Category] = []          // 顶级分类（电影 / 电视剧 / 综艺 / 动漫）
     @Published var subs: [Category] = []          // 当前顶级下的子分类
     @Published var activeTop: Category?
     @Published var activeSub: Category?           // nil = 「全部」
@@ -640,16 +727,39 @@ final class CatalogStore: ObservableObject {
         isBusy = true
         message = nil
 
-        let fetched = (try? await MacCMS.categories(source: source)) ?? []
-        all = fetched
-        tops = fetched
-            .filter { $0.pid == 0 && !Category.blockedNames.contains($0.name) }
+        // 双源并发拉分类表：非凡（http，分类最准）优先；
+        // 电视网络下拉不到就用最大资源（https，更稳，但没有 type_pid → 靠区段推断）。
+        let primary = VideoSource.builtIn[0]
+        let secondary = VideoSource.builtIn[1]
+        async let primaryCats = MacCMS.categories(source: primary)
+        async let secondaryCats = MacCMS.categories(source: secondary)
+
+        var fetched: [Category] = []
+        if let cats = try? await primaryCats, cats.count >= 5 {
+            fetched = cats
+            workingSource = primary
+        } else if let cats = try? await secondaryCats, cats.count >= 5 {
+            fetched = cats
+            workingSource = secondary
+        }
+
+        if fetched.isEmpty {
+            // 分类表全挂：用固定结构兜底，列表仍走非凡（编号体系一致）。
+            // 列表接口和分类表接口是两条路，多半还能用。
+            all = Category.fallback
+            workingSource = VideoSource.catalogSource
+        } else {
+            all = fetched
+        }
+
+        tops = all
+            .filter { $0.pid == 0 && !Category.isBlocked($0.name) }
             .sorted { $0.id < $1.id }
 
         isBusy = false
 
         if tops.isEmpty {
-            message = "分类表没取到，稍后再试或者用搜索"
+            message = "分类没取到，稍后再试或者用搜索"
             return
         }
         if activeTop == nil, let first = tops.first {
@@ -660,7 +770,7 @@ final class CatalogStore: ObservableObject {
     func selectTop(_ top: Category) async {
         activeTop = top
         subs = all
-            .filter { $0.pid == top.id && !Category.blockedNames.contains($0.name) }
+            .filter { $0.pid == top.id && !Category.isBlocked($0.name) }
             .sorted { $0.id < $1.id }
         activeSub = nil
         await reload()
@@ -695,6 +805,9 @@ final class CatalogStore: ObservableObject {
             let batch = deduplicate(await fetchPage(1))
             items = batch
             hasMore = batch.count >= 15
+            if batch.isEmpty {
+                message = "这个分类暂时没取到内容，可以换个分类或用搜索"
+            }
 
         case .topRated:
             var pool: [VodItem] = []
@@ -741,9 +854,9 @@ final class CatalogStore: ObservableObject {
     private func fetchPage(_ index: Int) async -> [VodItem] {
         guard activeTop != nil else { return [] }
 
-        // 取成局部常量再进并发闭包：self.source 是 actor-isolated 的，
+        // 取成局部常量再进并发闭包：self.workingSource 是 actor-isolated 的，
         // 直接在 group.addTask 里引用会要求显式 self 且跨隔离有问题。
-        let src = source
+        let src = workingSource
 
         if let sub = activeSub {
             return (try? await MacCMS.catalog(source: src, typeID: sub.id, page: index)) ?? []
