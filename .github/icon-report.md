@@ -1,6 +1,6 @@
 # tvOS 图标诊断报告
 
-生成时间（UTC）: 2026-10-10 01:38:48
+生成时间（UTC）: 2026-10-14 01:09:20
 Xcode: Xcode 16.4 Build version 16F6 
 SDK: tvOS SDKs:
 
@@ -31,13 +31,13 @@ xcodebuild exit=0
 ```
 **产物内容**
 ```
-total 2240
-drwxr-xr-x  6 runner  staff     192 Oct 10 01:39 .
-drwxr-xr-x@ 5 runner  staff     160 Oct 10 01:39 ..
--rw-r--r--  1 runner  staff  623359 Oct 10 01:39 Assets.car
--rw-r--r--  1 runner  staff    1210 Oct 10 01:39 Info.plist
--rwxr-xr-x  1 runner  staff  510576 Oct 10 01:39 KVideoTV
--rw-r--r--  1 runner  staff       8 Oct 10 01:39 PkgInfo
+total 2768
+drwxr-xr-x  6 runner  staff     192 Oct 14 01:09 .
+drwxr-xr-x@ 5 runner  staff     160 Oct 14 01:09 ..
+-rw-r--r--  1 runner  staff  623359 Oct 14 01:09 Assets.car
+-rw-r--r--  1 runner  staff    1210 Oct 14 01:09 Info.plist
+-rwxr-xr-x  1 runner  staff  781896 Oct 14 01:09 KVideoTV
+-rw-r--r--  1 runner  staff       8 Oct 14 01:09 PkgInfo
 
 -- Info.plist 里与图标有关的键 --
   "CFBundleIcons" => {
