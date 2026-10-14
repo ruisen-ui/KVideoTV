@@ -32,23 +32,64 @@ ContentView.swift:11:8: error: no such module 'WebKit'
 ## 工作原理
 
 ```
-① 搜索 / 列表
-     <采集站>/api.php/provide/vod?ac=videolist&wd=关键词     → JSON
-                                                                  │
-② 取分集                                                          ▼
+① 分类表（顶部导航：推荐 / 电影 / 连续剧 / 综艺 / 动漫）
+     <采集站>/api.php/provide/vod?ac=list                  → JSON 顶层 class 字段
+     （type_pid==0 的是顶级分类，其余按 type_pid 挂到顶级下面）
+
+② 分类列表 —— 「最新」
+     ...?ac=detail&t=<type_id>&pg=<页码>                   → 默认就是按更新时间倒序
+     （选「全部」时并发取该顶级下所有子分类的同一页，合并去重）
+
+②' 搜索
+     ...?ac=videolist&wd=关键词                             → JSON，多个源并发
+
+③ 取分集
      vod_play_url = "第01集$https://.../share/xxx#第02集$..."   （# 分集，$$$ 分播放组）
-                                                                  │
-③ 解析播放地址                                                    ▼
+
+④ 解析播放地址
      · 已是 .m3u8 直链 → 直接用
      · 是 /share/xxx 播放页 → 抓页面，正则提取 JS 里的 m3u8 地址
        页内形如：const url = "/20250420/49523_116b8961/index.m3u8?sign=..."
        （相对路径，需用页面 URL 补全）
-                                                                  │
-④ 播放                                                            ▼
-     AVPlayerViewController 播放 m3u8
+
+⑤ 播放
+     SwiftUI VideoPlayer（tvOS 内部即系统 AVPlayerViewController）
+
+⑥ 豆瓣评分 —— 「高分」排序用
+     https://movie.douban.com/j/subject_abstract?subject_id=<豆瓣ID>
+     取 subject.rate（形如 "5.5"），8 并发批量补分
 ```
 
-四个步骤都在 `KVideoTV/ContentView.swift` 里，按 `// MARK:` 分段，很好找。
+这几步都在 `KVideoTV/ContentView.swift` 里，按 `// MARK:` 分段，很好找。
+
+---
+
+## 分类浏览：为什么是「最新 / 高分」而不是「最新 / 最热」
+
+网站上有「最新 / 最热」，App 里对应的是「最新 / 高分」，原因：
+
+**采集源根本没有热度数据。** 实测非凡/最大/暴风/极速四个源：
+
+```
+vod_hits / vod_hits_day / vod_hits_week   →  全部恒为 0
+by=hits   / by=score / order=hits         →  参数无效，返回结果与默认排序完全一致
+vod_score / vod_douban_score              →  大多为 0.0
+```
+
+也就是说这些采集站不记录播放量，API 也没有热度排序能力，**「最热」取不到真实数据**。
+网站上的「最热」是它自己后端统计用户点击得出的，外部拿不到。
+
+所以 App 改成按**豆瓣评分**排：取该分类最近 3 页（60 条）作候选池 →
+并发查豆瓣 `subject_abstract` 补分 → 按评分倒序。
+
+| 排序 | 数据来源 | 说明 |
+| --- | --- | --- |
+| **最新** | 采集站默认顺序（`vod_time` 倒序） | 无限翻页，滚到底自动续 |
+| **高分** | 豆瓣评分 | 不分页（榜单只取前 60 条候选），未开分的排最后 |
+
+> 豆瓣只对「已上映且评价数够」的片子有分，实测约 1/4 能查到，剩下的是新片/短剧，
+> 界面上不显示评分角标（金色小方块）。如果某天豆瓣接口失效，「高分」会退化成
+> 全部无分、顺序不变 —— 但「最新」和搜索不受影响。
 
 ---
 
@@ -69,6 +110,10 @@ ContentView.swift:11:8: error: no such module 'WebKit'
 
 > 想跟 KVideo 站点保持同步的话，源清单在它自己的 `/api/config` 里：
 > `subscriptionSources` 指向一个包含 `baseUrl` 列表的 JSON。
+
+**分类浏览固定用 `VideoSource.catalogSource`（= 非凡资源）**：
+分类 ID 是各采集站自己的一套编号、跨源不通用，非凡资源分类最全（实测 30 个分类、9.8 万条），
+所以分类页只打它一个源；搜索仍然是 4 个源并发。
 
 ---
 
@@ -291,6 +336,11 @@ tvOS 上能用的侧载工具其实很少：
 
 ## 可选增强（按需加）
 
+- **真·最热榜**：采集源没有播放量（见上文），要真实热度只能自建 ——
+  App 端把每次播放记进 `UserDefaults`，按本地次数排序，即「我常看的」榜。
+  单用户场景价值有限，多人共用才有意义。
+- **评分缓存**：豆瓣评分目前每次进「高分」都现查。可以落一份 `UserDefaults`
+  缓存（subject_id → 评分，7 天过期），第二次进就秒开。
 - **多播放组**：`vod_play_url` 里 `$$$` 分隔的是不同播放线路，目前只取第一组，
   可以做成线路切换。
 - **收藏 / 观看记录**：存 `UserDefaults` 即可，纯本地。
