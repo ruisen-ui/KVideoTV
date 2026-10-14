@@ -88,10 +88,40 @@ struct Category: Identifiable, Hashable {
 
     // MARK: 客厅场景不放的分类
 
-    static let blockedKeywords: [String] = ["伦理", "三级", "两性", "写真"]
+    static let blockedKeywords: [String] = ["伦理", "三级", "两性", "写真", "擦边"]
 
     static func isBlocked(_ name: String) -> Bool {
         blockedKeywords.contains { name.contains($0) }
+    }
+
+    // MARK: 短剧系分类名
+
+    /// 短剧是独立内容形态（每集 1-2 分钟、竖屏、日更几十条）。
+    /// 最大资源把它挂在 54 / 64-69 / 73 / 75 这批编号上，**且不返回 type_pid**，
+    /// 原来的推断会把「现代都市」这类名字认成「电影」→ 电影分类被短剧污染。
+    static let shortDramaKeywords: [String] = [
+        "短剧", "爽剧", "爽文", "漫剧", "女频", "男频",
+        "穿越", "悬疑", "都市", "仙侠", "逆袭", "战神", "赘婿", "甜宠",
+    ]
+
+    static func isShortDrama(_ name: String) -> Bool {
+        shortDramaKeywords.contains { name.contains($0) }
+    }
+
+    // MARK: 首页混排用的粗分组
+
+    /// 把 `type_name`（「港台综艺」「年代穿越」「动作片」）归到一个大组。
+    /// 采集源的更新量高度不均 —— 短剧 / 日更综艺一天刷几十条，
+    /// 不按大组限额的话首页会被单一类型占满。
+    static func feedGroup(of typeName: String) -> String {
+        if isShortDrama(typeName) { return "短剧" }
+        if typeName.contains("综艺") || typeName.contains("演唱") || typeName.contains("体育")
+            || typeName.contains("篮球") || typeName.contains("足球")
+            || typeName.contains("斯诺克") { return "综艺" }
+        if typeName.contains("动漫") || typeName.contains("动画") { return "动漫" }
+        if typeName.contains("剧") { return "电视剧" }
+        if typeName.contains("片") || typeName.contains("电影") { return "电影" }
+        return "其他"
     }
 
     // MARK: pid 缺失时的归属推断
@@ -107,6 +137,9 @@ struct Category: Identifiable, Hashable {
         case 29...33: return 4          // 国产动漫…海外动漫 → 动漫
         default:
             if isBlocked(rawName) { return -1 }
+            // 短剧系必须先判：它们不带 pid、编号又不在上面任何区段里，
+            // 落到最后那个 `return 1` 会整批塞进「电影」，把电影分类污染掉。
+            if isShortDrama(rawName) { return 2 }
             if rawName.contains("演唱") || rawName.contains("体育")
                 || rawName.contains("篮球") || rawName.contains("足球")
                 || rawName.contains("斯诺克") { return 3 }
@@ -179,6 +212,10 @@ struct VodItem: Identifiable, Hashable {
     let pic: String
     let remarks: String
     let typeName: String
+    /// 采集站的 `vod_time`（入库/更新时间，形如 "2026-10-14 08:59:34"）。
+    /// 必须存下来：多源/多分类是**并发**取回来再拼的，到达顺序 ≠ 时间顺序，
+    /// 不自己按这个字段排一遍，界面上的「最新」就是假的。
+    let time: String
     let year: String
     let area: String
     let actor: String
@@ -319,6 +356,7 @@ struct MacCMSVod: Decodable {
     let vod_name: FlexibleString?
     let vod_pic: FlexibleString?
     let vod_remarks: FlexibleString?
+    let vod_time: FlexibleString?
     let vod_year: FlexibleString?
     let vod_area: FlexibleString?
     let type_name: FlexibleString?
@@ -416,6 +454,7 @@ enum MacCMS {
                 pic: raw.vod_pic?.value ?? "",
                 remarks: raw.vod_remarks?.value ?? "",
                 typeName: raw.type_name?.value ?? "",
+                time: raw.vod_time?.value ?? "",
                 year: raw.vod_year?.value ?? "",
                 area: raw.vod_area?.value ?? "",
                 actor: raw.vod_actor?.value ?? "",
@@ -651,6 +690,12 @@ final class Aggregator: ObservableObject {
         }
     }
 
+    /// 首页「推荐」。
+    ///
+    /// 采集源的「最近更新」≠「能看的片单」——各站 48 小时内的更新主要是短剧、
+    /// 日更综艺、周更剧这类按集刷新的内容，而且四个源是**并发**拉回来的，
+    /// 先返回的源会一直霸占最前面（实测只有最大资源的首页清一色短剧）。
+    /// 所以这里合并后统一走 `mix`：时间倒序 + 大组密度封顶。
     func loadLatest() async {
         guard items.isEmpty, !isBusy else { return }
 
@@ -667,16 +712,44 @@ final class Aggregator: ObservableObject {
             }
             for await batch in group {
                 collected.append(contentsOf: batch)
-                items = collected
+                // 边到边显示，但每次都重排 —— 否则先返回的源会一直霸占最前面
+                items = Self.mix(deduplicate(collected))
             }
         }
 
-        items = deduplicate(collected)
+        items = Self.mix(deduplicate(collected))
         isBusy = false
 
         if items.isEmpty {
             message = "暂时没取到内容，可以直接搜索片名"
         }
+    }
+
+    /// 首页各大组的上限。采集源里短剧、日更综艺、周更剧的更新量是电影的十几倍，
+    /// 不封顶的话首页必被单一类型刷屏（实测 80 条里 19 条短剧全挤在最前面）。
+    private static let feedCaps: [String: Int] = [
+        "电影": 18, "电视剧": 14, "综艺": 10, "动漫": 10, "短剧": 3, "其他": 5,
+    ]
+
+    /// 首页混排：按 `vod_time` 倒序，再按大组做密度封顶。
+    ///
+    /// 注意是「在时间序上抽稀」，不是分组后再拼 —— 结果仍是严格的时间倒序，
+    /// 只是每个大组最多出现 N 条，保证首屏不会全是短剧。
+    private static func mix(_ list: [VodItem], limit: Int = 60) -> [VodItem] {
+        // "2026-10-14 08:59:34" 这种定长格式可以直接做字符串比较
+        let sorted = list.sorted { $0.time > $1.time }
+        var used: [String: Int] = [:]
+        var picked: [VodItem] = []
+
+        for item in sorted where picked.count < limit {
+            let group = Category.feedGroup(of: item.typeName)
+            let cap = feedCaps[group] ?? 4
+            guard (used[group] ?? 0) < cap else { continue }
+            used[group, default: 0] += 1
+            picked.append(item)
+        }
+
+        return picked
     }
 
     private func deduplicate(_ list: [VodItem]) -> [VodItem] {
@@ -875,7 +948,9 @@ final class CatalogStore: ObservableObject {
                 collected.append(contentsOf: batch)
             }
         }
-        return collected
+        // 各子分类是并发拉回来的，拼起来时间序是乱的
+        // （动作片的一整页会压在剧情片更新的片子前面）→ 「最新」必须自己再排一次。
+        return collected.sorted { $0.time > $1.time }
     }
 
     private func deduplicate(_ list: [VodItem]) -> [VodItem] {
